@@ -134,7 +134,7 @@ function getBaseUrl(request: Request): string {
       "[POST /api/account/invitations] could not derive base URL from request; falling back to marketing domain",
     );
   }
-  return "https://wacrm.tech";
+  return process.env.NEXT_PUBLIC_APP_URL || "https://crm.fallintech.com";
 }
 
 const MAX_LABEL_LEN = 80;
