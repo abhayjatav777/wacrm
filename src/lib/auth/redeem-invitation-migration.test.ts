@@ -14,6 +14,8 @@ const tablesWithoutDomainData = new Set([
   "account_invitations",
   "member_presence",
   "pending_message_statuses",
+  "whatsapp_conversation_window",
+  "whatsapp_message_usage",
 ]);
 
 function accountScopedTables(): Set<string> {

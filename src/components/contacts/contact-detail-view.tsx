@@ -11,6 +11,8 @@ import {
   TemplatePicker,
   type TemplateSendValues,
 } from '@/components/inbox/template-picker';
+import { SendFreeMessageModal } from '@/components/messaging/send-free-message-modal';
+import { SendTemplateModal } from '@/components/messaging/send-template-modal';
 import {
   Sheet,
   SheetContent,
@@ -39,6 +41,7 @@ import {
   X,
   DollarSign,
   LayoutTemplate,
+  MessageSquare,
 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { planCustomValueWrites } from '@/lib/contacts/custom-value-writes';
@@ -72,6 +75,8 @@ export function ContactDetailView({
   // find-or-creates the conversation, so no inbound message is required.
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [sendingTemplate, setSendingTemplate] = useState(false);
+  const [sendFreeMessageOpen, setSendFreeMessageOpen] = useState(false);
+  const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
 
   // Details tab
   const [editName, setEditName] = useState('');
@@ -446,19 +451,23 @@ export function ContactDetailView({
                   </div>
                 </div>
               </div>
-              <div className="mt-3">
+              <div className="mt-3 flex items-center gap-2">
                 <Button
                   size="sm"
-                  onClick={() => setTemplatePickerOpen(true)}
-                  disabled={sendingTemplate}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  onClick={() => setSendFreeMessageOpen(true)}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5"
                 >
-                  {sendingTemplate ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <LayoutTemplate className="size-4" />
-                  )}
-                  {t('sendTemplateBtn')}
+                  <MessageSquare className="size-4" />
+                  Send Free Message
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSendTemplateOpen(true)}
+                  className="gap-1.5"
+                >
+                  <LayoutTemplate className="size-4" />
+                  Send Template
                 </Button>
               </div>
             </SheetHeader>
@@ -767,6 +776,23 @@ export function ContactDetailView({
       open={templatePickerOpen}
       onOpenChange={setTemplatePickerOpen}
       onSelect={handleSendTemplate}
+    />
+    <SendFreeMessageModal
+      open={sendFreeMessageOpen}
+      onOpenChange={setSendFreeMessageOpen}
+      contact={contact}
+      onSent={() => {
+        onUpdated();
+      }}
+      onOpenTemplateModal={() => setSendTemplateOpen(true)}
+    />
+    <SendTemplateModal
+      open={sendTemplateOpen}
+      onOpenChange={setSendTemplateOpen}
+      contact={contact}
+      onSent={() => {
+        onUpdated();
+      }}
     />
     </>
   );

@@ -428,7 +428,9 @@ export interface SendMediaMessageArgs {
   to: string
   kind: MediaKind
   /** Public URL Meta fetches at send time. */
-  link: string
+  link?: string
+  /** Meta media ID from POST /{phone_number_id}/media */
+  mediaId?: string
   /** Optional caption — Meta caps at 1024 chars. Documents + images + videos accept it; audio does NOT. */
   caption?: string
   /** Document-only. Shown in the recipient's chat as the file name. Ignored for image/video/audio. */
@@ -436,29 +438,78 @@ export interface SendMediaMessageArgs {
   contextMessageId?: string
 }
 
+export interface UploadMediaArgs {
+  phoneNumberId: string
+  accessToken: string
+  file: Blob | File | Buffer | ArrayBuffer
+  mimeType: string
+  filename?: string
+}
+
+export interface UploadMediaResult {
+  mediaId: string
+}
+
 /**
- * Send an image, video, document, or audio (voice note) via a public URL.
+ * Upload a media file directly to Meta WhatsApp Cloud API (POST /{phoneNumberId}/media).
+ * Returns the Meta media ID to be referenced in media messages.
+ */
+export async function uploadMediaToWhatsApp(
+  args: UploadMediaArgs
+): Promise<UploadMediaResult> {
+  const { phoneNumberId, accessToken, file, mimeType, filename = 'attachment' } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/media`
+
+  const formData = new FormData()
+  formData.append('messaging_product', 'whatsapp')
+  formData.append('type', mimeType)
+
+  if (file instanceof Blob) {
+    formData.append('file', file, filename)
+  } else {
+    const blob = new Blob([file as ArrayBuffer], { type: mimeType })
+    formData.append('file', blob, filename)
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: formData,
+  })
+
+  if (!response.ok) {
+    await throwMetaError(response, `Meta Media Upload error: ${response.status}`)
+  }
+
+  const data = await response.json()
+  return { mediaId: data.id }
+}
+
+/**
+ * Send an image, video, document, or audio (voice note) via a public URL or media ID.
  *
  * Used by the Flows engine's `send_media` node and the inbox composer's
  * agent-initiated media sends. Mirrors `sendTextMessage` — single fetch,
  * throws on non-2xx, returns Meta's message id.
  *
  * Audio is special-cased: Meta rejects `caption` and `filename` on audio
- * messages, so we send `{ link }` only. WhatsApp auto-renders an
+ * messages, so we send `{ link }` or `{ id }` only. WhatsApp auto-renders an
  * OGG/Opus file as a playable voice note (waveform) rather than a file
  * attachment.
  */
 export async function sendMediaMessage(
   args: SendMediaMessageArgs,
 ): Promise<MetaSendResult> {
-  const { phoneNumberId, accessToken, to, kind, link, caption, filename, contextMessageId } = args
-  if (!link) throw new Error('sendMediaMessage requires a link.')
+  const { phoneNumberId, accessToken, to, kind, link, mediaId, caption, filename, contextMessageId } = args
+  if (!link && !mediaId) throw new Error('sendMediaMessage requires a link or a mediaId.')
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
 
   // Audio accepts neither caption nor filename per Meta's spec — adding
   // either yields a 400. image/video/document accept a caption; only
   // document accepts a filename.
-  const media: Record<string, unknown> = { link }
+  const media: Record<string, unknown> = mediaId ? { id: mediaId } : { link }
   if (caption && kind !== 'audio') media.caption = caption
   if (kind === 'document' && filename) media.filename = filename
 

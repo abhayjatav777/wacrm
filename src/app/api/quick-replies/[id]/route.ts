@@ -86,3 +86,6 @@ export async function DELETE(
   if (!deleted || deleted.length === 0) return notFound()
   return NextResponse.json({ ok: true })
 }
+
+export const PUT = PATCH
+

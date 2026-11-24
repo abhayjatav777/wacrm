@@ -63,6 +63,12 @@ export async function POST(request: Request) {
     content_text = text
   }
 
+  const rawShortcut = typeof body.shortcut === 'string' ? body.shortcut.trim().toLowerCase() : null
+  const shortcut = rawShortcut ? (rawShortcut.startsWith('/') ? rawShortcut.slice(1) : rawShortcut) : null
+  const category = typeof body.category === 'string' ? body.category.trim() : null
+  const media_url = typeof body.media_url === 'string' ? body.media_url.trim() : null
+  const is_active = body.is_active !== undefined ? Boolean(body.is_active) : true
+
   const { data, error } = await supabaseAdmin()
     .from('quick_replies')
     .insert({
@@ -72,6 +78,10 @@ export async function POST(request: Request) {
       kind,
       content_text,
       interactive_payload,
+      shortcut,
+      category,
+      media_url,
+      is_active,
     })
     .select()
     .single()

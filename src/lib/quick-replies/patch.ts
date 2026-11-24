@@ -9,6 +9,10 @@ export interface StoredQuickReply {
   kind: QuickReplyKind
   content_text: string | null
   interactive_payload: unknown
+  shortcut?: string | null
+  category?: string | null
+  media_url?: string | null
+  is_active?: boolean | null
 }
 
 export type QuickReplyPatchResult =
@@ -25,6 +29,23 @@ export function resolveQuickReplyPatch(
     const title = body.title.trim()
     if (!title) return { ok: false, error: t('common.titleEmpty') }
     update.title = title
+  }
+
+  if ('shortcut' in body) {
+    const shortcut = typeof body.shortcut === 'string' ? body.shortcut.trim().toLowerCase() : null
+    update.shortcut = shortcut ? (shortcut.startsWith('/') ? shortcut.slice(1) : shortcut) : null
+  }
+
+  if ('category' in body) {
+    update.category = typeof body.category === 'string' ? body.category.trim() : null
+  }
+
+  if ('media_url' in body) {
+    update.media_url = typeof body.media_url === 'string' ? body.media_url.trim() : null
+  }
+
+  if ('is_active' in body) {
+    update.is_active = Boolean(body.is_active)
   }
 
   let kind = stored.kind

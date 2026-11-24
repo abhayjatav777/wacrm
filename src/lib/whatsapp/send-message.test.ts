@@ -229,6 +229,8 @@ function sendPathDb(
       const builder: Record<string, unknown> = {
         select: () => builder,
         eq: () => builder,
+        order: () => builder,
+        limit: () => builder,
         insert: (row: Record<string, unknown>) => {
           if (table === 'messages') captured.message = row;
           return builder;
@@ -237,7 +239,27 @@ function sendPathDb(
           if (table === 'conversations') captured.conversation = row;
           return builder;
         },
-        maybeSingle: async () => ({ data: null, error: null }),
+        maybeSingle: async () => {
+          if (table === 'whatsapp_conversation_window') {
+            return {
+              data: {
+                last_customer_message_at: new Date().toISOString(),
+                window_expires_at: new Date(Date.now() + 86400000).toISOString(),
+                status: 'open',
+              },
+              error: null,
+            };
+          }
+          if (table === 'messages') {
+            return {
+              data: {
+                created_at: new Date().toISOString(),
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: null };
+        },
         single: async () => {
           if (table === 'conversations') {
             return { data: conversation, error: null };

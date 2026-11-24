@@ -29,6 +29,8 @@ import {
   sendInteractiveList,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
+import { assertServiceWindowOpen } from '@/lib/whatsapp/service-window';
+import { recordDeliveredServiceMessage } from '@/lib/whatsapp/usage-tracker';
 import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
@@ -40,6 +42,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
+import { isUniqueViolation } from '@/lib/contacts/dedupe';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
 import { applyPendingMessageStatuses } from '@/lib/whatsapp/message-status-sync';
 import type { MessageTemplate } from '@/types';
@@ -79,6 +82,7 @@ export interface SendMessageParams {
   messageType: string;
   contentText?: string | null;
   mediaUrl?: string | null;
+  mediaId?: string | null;
   filename?: string | null;
   templateName?: string | null;
   templateLanguage?: string | null;
@@ -90,6 +94,8 @@ export interface SendMessageParams {
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
   senderId?: string | null;
+  /** Skip the 24-hour customer service window check (e.g. for templates or system bypass). */
+  skipWindowCheck?: boolean;
 }
 
 export interface SendMessageResult {
@@ -118,10 +124,11 @@ export function validateSendMessageParams(params: {
   messageType: string;
   contentText?: string | null;
   mediaUrl?: string | null;
+  mediaId?: string | null;
   templateName?: string | null;
   interactivePayload?: InteractiveMessagePayload | null;
 }): void {
-  const { messageType, contentText, mediaUrl, templateName, interactivePayload } =
+  const { messageType, contentText, mediaUrl, mediaId, templateName, interactivePayload } =
     params;
 
   if (!messageType) {
@@ -163,10 +170,10 @@ export function validateSendMessageParams(params: {
     }
   }
 
-  if (isMediaKind && !mediaUrl) {
+  if (isMediaKind && !mediaUrl && !mediaId) {
     throw new SendMessageError(
       'bad_request',
-      `media_url is required for ${messageType} messages`,
+      `media_url is required for ${messageType} messages (or provide media_id)`,
       400
     );
   }
@@ -196,6 +203,7 @@ export async function sendMessageToConversation(
     messageType,
     contentText,
     mediaUrl,
+    mediaId,
     filename,
     templateName,
     templateLanguage,
@@ -204,6 +212,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    skipWindowCheck,
   } = params;
 
   if (!conversationId) {
@@ -218,6 +227,7 @@ export async function sendMessageToConversation(
     messageType,
     contentText,
     mediaUrl,
+    mediaId,
     templateName,
     interactivePayload,
   });
@@ -237,6 +247,17 @@ export async function sendMessageToConversation(
   }
 
   const contact = conversation.contact;
+
+  // Validate the 24-hour customer service window for non-template messages.
+  // Meta Cloud API rules strictly enforce that free-form messages (text, media, interactive)
+  // are only permissible within 24 hours of the last customer-initiated inbound message.
+  if (messageType !== 'template' && !skipWindowCheck) {
+    await assertServiceWindowOpen(db, {
+      accountId,
+      contactId: contact.id,
+      conversationId: conversation.id,
+    });
+  }
 
   // A contact is addressable by phone number OR by business-scoped user
   // ID. Meta withholds the phone number for a customer who has adopted
@@ -364,7 +385,8 @@ export async function sendMessageToConversation(
         accessToken,
         to: phone,
         kind: messageType as MediaKind,
-        link: mediaUrl!,
+        link: mediaUrl || undefined,
+        mediaId: mediaId || undefined,
         caption: contentText || undefined,
         filename: filename || undefined,
         contextMessageId,
@@ -489,6 +511,8 @@ export async function sendMessageToConversation(
         messageType === 'template'
           ? templateHeaderMediaUrl(templateRow, templateMessageParams)
           : mediaUrl || null,
+      media_id: mediaId || null,
+      caption: isMediaKind ? (contentText || null) : null,
       template_name: templateName || null,
       interactive_payload:
         messageType === 'interactive' ? interactivePayload : null,
@@ -506,6 +530,18 @@ export async function sendMessageToConversation(
       `Message sent to Meta but failed to save to DB: ${msgError.message}`,
       500
     );
+  }
+
+  // Reconcile monthly service message usage if non-template
+  if (messageType !== 'template') {
+    try {
+      await recordDeliveredServiceMessage(supabaseAdmin(), {
+        accountId,
+        phoneNumberId: config.phone_number_id,
+      });
+    } catch (err) {
+      console.warn('[send-message] could not record service message usage:', err);
+    }
   }
 
   await applyPendingMessageStatuses(supabaseAdmin(), accountId, waMessageId);
@@ -548,4 +584,79 @@ export async function sendMessageToConversation(
   }
 
   return { messageId: messageRecord.id, whatsappMessageId: waMessageId };
+}
+
+/**
+ * Resolve target conversation from either conversation_id or contact_id.
+ * If contact_id is provided, find or creates the conversation under the caller's account.
+ */
+export async function resolveTargetConversation(
+  supabase: SupabaseClient,
+  accountId: string,
+  userId: string,
+  target: { conversationId?: string | null; contactId?: string | null }
+): Promise<string> {
+  const { conversationId, contactId } = target;
+
+  if (conversationId) {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('id', conversationId)
+      .eq('account_id', accountId)
+      .single();
+
+    if (error || !data) {
+      throw new SendMessageError('not_found', 'Conversation not found', 404);
+    }
+    return data.id;
+  }
+
+  if (contactId) {
+    const { data: contactRow, error: contactErr } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('id', contactId)
+      .eq('account_id', accountId)
+      .maybeSingle();
+
+    if (contactErr || !contactRow) {
+      throw new SendMessageError('not_found', 'Contact not found', 404);
+    }
+
+    const findExisting = async () => {
+      const { data } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .maybeSingle();
+      return data?.id ?? null;
+    };
+
+    const existingId = await findExisting();
+    if (existingId) return existingId;
+
+    const { data: created, error } = await supabase
+      .from('conversations')
+      .insert({
+        account_id: accountId,
+        user_id: userId,
+        contact_id: contactId,
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      if (isUniqueViolation(error)) {
+        const racedId = await findExisting();
+        if (racedId) return racedId;
+      }
+      throw new SendMessageError('db_error', `Error creating conversation: ${error.message}`, 500);
+    }
+
+    return created.id;
+  }
+
+  throw new SendMessageError('bad_request', 'Either conversation_id or contact_id is required', 400);
 }

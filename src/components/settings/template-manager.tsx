@@ -12,7 +12,11 @@ import {
   Pencil,
   RotateCcw,
   Upload,
+  Zap,
+  LayoutTemplate,
 } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { QuickRepliesManager } from './quick-replies-manager';
 import { createClient } from '@/lib/supabase/client';
 import {
   uploadAccountMedia,
@@ -520,28 +524,45 @@ export function TemplateManager() {
   }
 
   return (
-    <section className="animate-in fade-in-50 space-y-4 duration-200">
-      <SettingsPanelHead
-        title={t('title')}
-        description={t('description')}
-        action={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleSyncFromMeta}
-              disabled={syncing}
-              title={t('syncTitle')}
-            >
-              <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? t('syncing') : t('syncFromMeta')}
-            </Button>
-            <Button onClick={openCreate}>
-              <Plus className="size-4" />
-              {t('newTemplate')}
-            </Button>
-          </div>
-        }
-      />
+    <section className="animate-in fade-in-50 space-y-6 duration-200">
+      <Tabs defaultValue="quick-replies" className="space-y-4">
+        <TabsList className="bg-muted/60 p-1">
+          <TabsTrigger value="quick-replies" className="gap-2 text-xs">
+            <Zap className="size-3.5 text-amber-500" />
+            Quick Replies
+          </TabsTrigger>
+          <TabsTrigger value="whatsapp-templates" className="gap-2 text-xs">
+            <LayoutTemplate className="size-3.5 text-primary" />
+            WhatsApp Templates
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="quick-replies" className="mt-4">
+          <QuickRepliesManager />
+        </TabsContent>
+
+        <TabsContent value="whatsapp-templates" className="mt-4 space-y-4">
+          <SettingsPanelHead
+            title={t('title')}
+            description={t('description')}
+            action={
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleSyncFromMeta}
+                  disabled={syncing}
+                  title={t('syncTitle')}
+                >
+                  <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
+                  {syncing ? t('syncing') : t('syncFromMeta')}
+                </Button>
+                <Button onClick={openCreate}>
+                  <Plus className="size-4" />
+                  {t('newTemplate')}
+                </Button>
+              </div>
+            }
+          />
 
       {templates.length === 0 ? (
         <Card>
@@ -1169,6 +1190,8 @@ export function TemplateManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+      </Tabs>
     </section>
   );
 }

@@ -704,11 +704,43 @@ export interface QuickReply {
   /** Author / audit only. */
   user_id: string;
   title: string;
+  shortcut?: string | null;
+  category?: string | null;
+  media_url?: string | null;
+  is_active?: boolean;
   kind: QuickReplyKind;
   /** Set when `kind === 'text'`. */
   content_text?: string | null;
   /** Set when `kind === 'interactive'`. */
   interactive_payload?: InteractiveMessagePayload | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================
+// Service window & message usage (061_whatsapp_messaging_upgrade.sql)
+// ============================================================
+
+export interface ConversationWindow {
+  id: string;
+  account_id: string;
+  contact_id: string;
+  phone_number_id: string;
+  last_customer_message_at: string;
+  window_expires_at: string;
+  status: 'open' | 'closed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MessageUsage {
+  id: string;
+  account_id: string;
+  phone_number_id: string;
+  billing_period: string;
+  free_allowance: number;
+  delivered_service_messages: number;
+  billable_service_messages: number;
   created_at: string;
   updated_at: string;
 }
